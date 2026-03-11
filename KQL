@@ -1,0 +1,272 @@
+# Azure Firewall Log Analytics Queries for Storage Account Replication
+
+## Query 1: Basic Firewall Logs with IP Filtering
+
+```kql
+// Replace the IP addresses in the arrays below with your actual source and destination IPs
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12"]);
+let timeRange = 24h;  // Adjust as needed
+
+AzureDiagnostics
+| where ResourceType == "AZUREFIREWALLS"
+| where TimeGenerated >= ago(timeRange)
+| where Category in ("AzureFirewallApplicationRule", "AzureFirewallNetworkRule")
+| extend SourceIP = extract(@"Source: ([0-9\.]+)", 1, msg_s)
+| extend DestIP = extract(@"Destination: ([0-9\.]+)", 1, msg_s)
+| extend DestPort = extract(@"Destination Port: ([0-9]+)", 1, msg_s)
+| extend Protocol = extract(@"Proto: ([A-Z]+)", 1, msg_s)
+| extend Action = extract(@"Action: ([A-Z]+)", 1, msg_s)
+| extend URL = extract(@"Url: ([^\s]+)", 1, msg_s)
+| where SourceIP in (sourceIPs) or DestIP in (destIPs)
+| project TimeGenerated, SourceIP, DestIP, DestPort, Protocol, Action, URL, msg_s
+| order by TimeGenerated desc
+```
+
+## Query 2: Storage-Specific Traffic Analysis
+
+```kql
+// Focus on storage-related ports (443, 445, 3260)
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12"]);
+let storagePorts = dynamic(["443", "445", "3260"]);
+let timeRange = 24h;
+
+AzureDiagnostics
+| where ResourceType == "AZUREFIREWALLS"
+| where TimeGenerated >= ago(timeRange)
+| where Category in ("AzureFirewallApplicationRule", "AzureFirewallNetworkRule")
+| extend SourceIP = extract(@"Source: ([0-9\.]+)", 1, msg_s)
+| extend DestIP = extract(@"Destination: ([0-9\.]+)", 1, msg_s)
+| extend DestPort = extract(@"Destination Port: ([0-9]+)", 1, msg_s)
+| extend Protocol = extract(@"Proto: ([A-Z]+)", 1, msg_s)
+| extend Action = extract(@"Action: ([A-Z]+)", 1, msg_s)
+| where (SourceIP in (sourceIPs) or DestIP in (destIPs))
+| where DestPort in (storagePorts) or msg_s contains "blob.core.windows.net" 
+    or msg_s contains "file.core.windows.net"
+| project TimeGenerated, SourceIP, DestIP, DestPort, Protocol, Action, msg_s
+| order by TimeGenerated desc
+```
+
+## Query 3: Connection Summary with Statistics
+
+```kql
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12"]);
+let timeRange = 24h;
+
+AzureDiagnostics
+| where ResourceType == "AZUREFIREWALLS"
+| where TimeGenerated >= ago(timeRange)
+| where Category in ("AzureFirewallApplicationRule", "AzureFirewallNetworkRule")
+| extend SourceIP = extract(@"Source: ([0-9\.]+)", 1, msg_s)
+| extend DestIP = extract(@"Destination: ([0-9\.]+)", 1, msg_s)
+| extend DestPort = extract(@"Destination Port: ([0-9]+)", 1, msg_s)
+| extend Protocol = extract(@"Proto: ([A-Z]+)", 1, msg_s)
+| extend Action = extract(@"Action: ([A-Z]+)", 1, msg_s)
+| where SourceIP in (sourceIPs) or DestIP in (destIPs)
+| summarize 
+    ConnectionCount = count(),
+    UniqueDestPorts = make_set(DestPort),
+    UniqueProtocols = make_set(Protocol),
+    AllowedConnections = countif(Action == "Allow"),
+    DeniedConnections = countif(Action == "Deny"),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+    by SourceIP, DestIP
+| order by ConnectionCount desc
+```
+
+## Query 4: Traffic Volume by Port (for Storage Replication Analysis)
+
+```kql
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12"]);
+let timeRange = 24h;
+
+AzureDiagnostics
+| where ResourceType == "AZUREFIREWALLS"
+| where TimeGenerated >= ago(timeRange)
+| where Category in ("AzureFirewallApplicationRule", "AzureFirewallNetworkRule")
+| extend SourceIP = extract(@"Source: ([0-9\.]+)", 1, msg_s)
+| extend DestIP = extract(@"Destination: ([0-9\.]+)", 1, msg_s)
+| extend DestPort = extract(@"Destination Port: ([0-9]+)", 1, msg_s)
+| extend Action = extract(@"Action: ([A-Z]+)", 1, msg_s)
+| where SourceIP in (sourceIPs) or DestIP in (destIPs)
+| summarize Count = count() by DestPort, Action
+| extend PortType = case(
+    DestPort == "443", "HTTPS (Azure Storage API)",
+    DestPort == "445", "SMB (Azure Files)",
+    DestPort == "3260", "iSCSI (Block Storage)",
+    "Other"
+)
+| order by Count desc
+```
+
+## Query 5: Hourly Traffic Pattern (Identify Replication Patterns)
+
+```kql
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12"]);
+let timeRange = 24h;
+
+AzureDiagnostics
+| where ResourceType == "AZUREFIREWALLS"
+| where TimeGenerated >= ago(timeRange)
+| where Category in ("AzureFirewallApplicationRule", "AzureFirewallNetworkRule")
+| extend SourceIP = extract(@"Source: ([0-9\.]+)", 1, msg_s)
+| extend DestIP = extract(@"Destination: ([0-9\.]+)", 1, msg_s)
+| extend DestPort = extract(@"Destination Port: ([0-9]+)", 1, msg_s)
+| extend Action = extract(@"Action: ([A-Z]+)", 1, msg_s)
+| where SourceIP in (sourceIPs) or DestIP in (destIPs)
+| summarize ConnectionCount = count() by bin(TimeGenerated, 1h), DestPort
+| render timechart
+```
+
+## Query 6: Detailed Message Analysis (URLs and FQDNs)
+
+```kql
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12"]);
+let timeRange = 24h;
+
+AzureDiagnostics
+| where ResourceType == "AZUREFIREWALLS"
+| where TimeGenerated >= ago(timeRange)
+| where Category == "AzureFirewallApplicationRule"
+| extend SourceIP = extract(@"Source: ([0-9\.]+)", 1, msg_s)
+| extend DestIP = extract(@"Destination: ([0-9\.]+)", 1, msg_s)
+| extend FQDN = extract(@"FQDN: ([^\s]+)", 1, msg_s)
+| extend URL = extract(@"Url: ([^\s]+)", 1, msg_s)
+| extend Action = extract(@"Action: ([A-Z]+)", 1, msg_s)
+| where SourceIP in (sourceIPs) or DestIP in (destIPs)
+| where FQDN contains "blob.core.windows.net" 
+    or FQDN contains "file.core.windows.net"
+    or FQDN contains "queue.core.windows.net"
+    or FQDN contains "table.core.windows.net"
+| project TimeGenerated, SourceIP, FQDN, URL, Action
+| order by TimeGenerated desc
+```
+
+## Query 7: Denied Connections (Troubleshooting)
+
+```kql
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12"]);
+let timeRange = 24h;
+
+AzureDiagnostics
+| where ResourceType == "AZUREFIREWALLS"
+| where TimeGenerated >= ago(timeRange)
+| where Category in ("AzureFirewallApplicationRule", "AzureFirewallNetworkRule")
+| extend SourceIP = extract(@"Source: ([0-9\.]+)", 1, msg_s)
+| extend DestIP = extract(@"Destination: ([0-9\.]+)", 1, msg_s)
+| extend DestPort = extract(@"Destination Port: ([0-9]+)", 1, msg_s)
+| extend Protocol = extract(@"Proto: ([A-Z]+)", 1, msg_s)
+| extend Action = extract(@"Action: ([A-Z]+)", 1, msg_s)
+| extend Rule = extract(@"Rule: ([^\s]+)", 1, msg_s)
+| where SourceIP in (sourceIPs) or DestIP in (destIPs)
+| where Action == "Deny"
+| project TimeGenerated, SourceIP, DestIP, DestPort, Protocol, Rule, msg_s
+| order by TimeGenerated desc
+```
+
+## Query 8: Top Connections by Data Volume (if available)
+
+```kql
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12"]);
+let timeRange = 7d;
+
+AzureDiagnostics
+| where ResourceType == "AZUREFIREWALLS"
+| where TimeGenerated >= ago(timeRange)
+| where Category in ("AzureFirewallApplicationRule", "AzureFirewallNetworkRule")
+| extend SourceIP = extract(@"Source: ([0-9\.]+)", 1, msg_s)
+| extend DestIP = extract(@"Destination: ([0-9\.]+)", 1, msg_s)
+| extend Action = extract(@"Action: ([A-Z]+)", 1, msg_s)
+| where SourceIP in (sourceIPs) or DestIP in (destIPs)
+| where Action == "Allow"
+| summarize 
+    TotalConnections = count(),
+    UniqueSourceIPs = dcount(SourceIP),
+    UniqueDestIPs = dcount(DestIP),
+    FirstConnection = min(TimeGenerated),
+    LastConnection = max(TimeGenerated)
+    by bin(TimeGenerated, 1d)
+| order by TimeGenerated desc
+```
+
+## Query 9: Quick Summary Dashboard
+
+```kql
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12"]);
+let timeRange = 24h;
+
+AzureDiagnostics
+| where ResourceType == "AZUREFIREWALLS"
+| where TimeGenerated >= ago(timeRange)
+| where Category in ("AzureFirewallApplicationRule", "AzureFirewallNetworkRule")
+| extend SourceIP = extract(@"Source: ([0-9\.]+)", 1, msg_s)
+| extend DestIP = extract(@"Destination: ([0-9\.]+)", 1, msg_s)
+| extend DestPort = extract(@"Destination Port: ([0-9]+)", 1, msg_s)
+| extend Action = extract(@"Action: ([A-Z]+)", 1, msg_s)
+| where SourceIP in (sourceIPs) or DestIP in (destIPs)
+| summarize 
+    ['Total Connections'] = count(),
+    ['Allowed'] = countif(Action == "Allow"),
+    ['Denied'] = countif(Action == "Deny"),
+    ['Unique Source IPs'] = dcount(SourceIP),
+    ['Unique Dest IPs'] = dcount(DestIP),
+    ['Storage Ports (443/445/3260)'] = countif(DestPort in ("443", "445", "3260")),
+    ['First Activity'] = min(TimeGenerated),
+    ['Last Activity'] = max(TimeGenerated)
+```
+
+---
+
+## How to Use These Queries
+
+1. **Open Azure Portal** → Log Analytics Workspace
+2. Click **Logs** in the left menu
+3. **Copy and paste** one of the queries above
+4. **Update the IP addresses** in the `sourceIPs` and `destIPs` arrays
+5. **Adjust time range** if needed (e.g., `24h`, `7d`, `30d`)
+6. Click **Run**
+
+## Customization Tips
+
+### Change Time Range:
+```kql
+let timeRange = 7d;     // Last 7 days
+let timeRange = 48h;    // Last 48 hours
+let timeRange = 30d;    // Last 30 days
+```
+
+### Add More IPs:
+```kql
+let sourceIPs = dynamic(["10.1.0.10", "10.1.0.11", "10.1.0.12", "10.1.0.13"]);
+let destIPs = dynamic(["10.2.0.10", "10.2.0.11", "10.2.0.12", "10.2.0.13"]);
+```
+
+### Filter by Specific Time Window:
+```kql
+| where TimeGenerated between (datetime(2024-03-01) .. datetime(2024-03-10))
+```
+
+## Storage Replication Indicators to Look For
+
+✓ **Port 443 traffic** - HTTPS (Azure Storage REST API)
+✓ **Port 445 traffic** - SMB (Azure Files)
+✓ **Consistent patterns** - Regular ongoing traffic indicates active replication
+✓ **Bi-directional flow** - Traffic in both directions
+✓ **Low denial rate** - Most connections should be allowed
+✓ **FQDNs containing** - *.blob.core.windows.net, *.file.core.windows.net
+
+## Export Results
+
+After running a query:
+- Click **Export** → **Export to CSV** to download results
+- Click **Pin to dashboard** to add to Azure Dashboard
+- Click **Save** to save the query for future use
