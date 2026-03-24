@@ -1,0 +1,48 @@
+{
+  "mode": "Indexed",
+  "displayName": "Inherit All Tags from Resource Group",
+  "policyRule": {
+    "if": {
+      "field": "type",
+      "notEquals": "Microsoft.Resources/resourceGroups"
+    },
+    "then": {
+      "effect": "deployIfNotExists",
+      "details": {
+        "type": "Microsoft.Resources/tags",
+        "name": "default",
+        "roleDefinitionIds": [
+          "/providers/Microsoft.Authorization/roleDefinitions/4a9ae827-6dc8-4573-8ac7-8239d42aa03f"
+        ],
+        "deployment": {
+          "properties": {
+            "mode": "incremental",
+            "template": {
+              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "resourceId": { "type": "string" },
+                "resourceGroupTags": { "type": "object" }
+              },
+              "resources": [
+                {
+                  "type": "Microsoft.Resources/tags",
+                  "name": "default",
+                  "apiVersion": "2021-04-01",
+                  "scope": "[parameters('resourceId')]",
+                  "properties": {
+                    "tags": "[parameters('resourceGroupTags')]"
+                  }
+                }
+              ]
+            },
+            "parameters": {
+              "resourceId": { "value": "[field('id')]" },
+              "resourceGroupTags": { "value": "[resourceGroup().tags]" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
