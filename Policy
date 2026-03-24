@@ -1,0 +1,34 @@
+{
+  "mode": "Indexed",
+  "displayName": "Inherit All Tags from Resource Group",
+  "description": "Inherits all tags from the parent resource group",
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {
+          "field": "type",
+          "notEquals": "Microsoft.Resources/resourceGroups"
+        },
+        {
+          "field": "tags",
+          "notEquals": "[resourceGroup().tags]"
+        }
+      ]
+    },
+    "then": {
+      "effect": "modify",
+      "details": {
+        "roleDefinitionIds": [
+          "/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"
+        ],
+        "operations": [
+          {
+            "operation": "addOrReplace",
+            "field": "tags",
+            "value": "[resourceGroup().tags]"
+          }
+        ]
+      }
+    }
+  }
+}
