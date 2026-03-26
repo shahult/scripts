@@ -1,0 +1,38 @@
+{
+  "mode": "Indexed",
+  "displayName": "Merge Resource Group Tags Into Resources",
+  "description": "Automatically merges all tags from the resource group into resources without overwriting existing tags.",
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {
+          "field": "type",
+          "notEquals": "Microsoft.Resources/resourceGroups"
+        },
+        {
+          "value": "[resourceGroup().tags]",
+          "notEquals": "{}"
+        }
+      ]
+    },
+    "then": {
+      "effect": "modify",
+      "details": {
+        "roleDefinitionIds": [
+          "/providers/Microsoft.Authorization/roleDefinitions/fd9d4e64-1f3b-4f0f-9f3f-5f1b3d1c5a3d"
+        ],
+        "operations": [
+          {
+            "operation": "addOrReplace",
+            "field": "tags",
+            "value": "[union(field('tags'), resourceGroup().tags)]"
+          }
+        ],
+        "existenceCondition": {
+          "field": "tags",
+          "equals": "[union(field('tags'), resourceGroup().tags)]"
+        }
+      }
+    }
+  }
+}
